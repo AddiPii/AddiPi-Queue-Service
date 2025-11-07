@@ -6,7 +6,6 @@ const SERVICE_BUS_CONN = process.env.SERVICE_BUS_CONN;
 const COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT;
 const COSMOS_KEY = process.env.COSMOS_KEY;
 
-// Basic environment validation with clear errors
 const missing = [];
 if (!SERVICE_BUS_CONN) missing.push('SERVICE_BUS_CONN');
 if (!COSMOS_ENDPOINT) missing.push('COSMOS_ENDPOINT');
