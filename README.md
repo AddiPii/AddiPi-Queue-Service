@@ -22,8 +22,9 @@ Serwis odczytuje następujące zmienne środowiskowe:
 Przykład pliku `.env` (nie commituj prawdziwych kluczy):
 
 ```
-STORAGE_CONN=DefaultEndpointsProtocol=https;AccountName=addipifiles;AccountKey=...;EndpointSuffix=core.windows.net
 SERVICE_BUS_CONN=Endpoint=sb://addipisb.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...
+COSMOS_ENDPOINT=https://your-cosmos-account.documents.azure.com:443/
+COSMOS_KEY=your-cosmos-key
 ```
 
 Upewnij się, że nie ma spacji wokół `=` i że nie opakowujesz wartości w `<...>`.
