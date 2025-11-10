@@ -42,3 +42,36 @@ try {
 }
 
 console.log('Queue Service STARTED - listening for file uploading...');
+
+
+async function main(){
+	const messageHandler = async (message) => {
+		const data = message.body;
+		console.log('Received EVENT:', data);
+
+		if (data.event === 'file_uploaded'){
+			const job = {
+				id: Date.now().toString(),
+				fileId: data.fileId,
+				status: 'pending',
+				createdAt: new Date().toISOString(),
+				scheduledAt: data.scheduledAt || null,
+			}
+		}
+
+		await container.items.upsert(job);
+		console.log('Added to Queue:', job);
+		
+		//checkPrinterandStartJob()     TODO
+	};
+
+	const errorHandler = (error) => {
+		console.error('EVENT ERROR:', error);
+	};
+	receiver.subscribe({
+		processMessage: messageHandler,
+		processError: errorHandler
+	});
+}
+
+main().catch(console.error);
