@@ -1,5 +1,6 @@
 const { ServiceBusClient } = require("@azure/service-bus");
 const { CosmosClient } = require("@azure/cosmos");
+const http = require('http');
 
 
 const SERVICE_BUS_CONN = process.env.SERVICE_BUS_CONN;
@@ -53,14 +54,14 @@ async function main(){
 			const job = {
 				id: Date.now().toString(),
 				fileId: data.fileId,
-				status: 'pending',
-				createdAt: new Date().toISOString(),
+				status: data.scheduledAt ? 'scheduled' : 'pending',
 				scheduledAt: data.scheduledAt || null,
+				createdAt: new Date().toISOString(),
 			}
 		}
 
 		await container.items.upsert(job);
-		console.log('Added to Queue:', job);
+		console.log(`JOB ${job.status.toUpperCase()}: ${job.id} -> ${job.scheduledAt || 'NOW'}`);
 		
 		//checkPrinterandStartJob()     TODO
 	};
@@ -75,3 +76,46 @@ async function main(){
 }
 
 main().catch(console.error);
+
+const PORT = process.env.PORT || 4000;
+
+function startHttpServer(){
+	const server = http.createServer(async (req, res) => {
+ 		if (req.method === 'GET' && req.url === '/queue'){
+ 			const info = {
+ 				serviceBus: { connected: !!sbClient },
+ 				receiver: receiver ? 'print-queue' : null,
+ 				recentJobs: []
+ 			};
+
+ 			if (container){
+ 				try {
+ 					const query = { query: 'SELECT TOP 10 * FROM c ORDER BY c.createdAt DESC' };
+ 					const result = await container.items.query(query).fetchAll();
+ 					info.recentJobs = result.resources || [];
+ 				} catch (err) {
+ 					info.recentJobsError = err && err.message ? err.message : String(err);
+ 				}
+ 			} else {
+ 				info.recentJobsError = 'Cosmos container not initialized';
+ 			}
+
+ 			res.setHeader('Content-Type', 'application/json');
+ 			res.end(JSON.stringify(info));
+ 			return;
+ 		}
+
+ 		if (req.method === 'GET' && req.url === '/health'){
+ 			res.writeHead(200, { 'Content-Type': 'application/json' });
+ 			res.end(JSON.stringify({ ok: true }));
+ 			return;
+ 		}
+
+ 		res.writeHead(404, { 'Content-Type': 'text/plain' });
+ 		res.end('Not found');
+ 	});
+
+	server.listen(PORT, () => console.log(`HTTP server listening on port ${PORT}`));
+}
+
+startHttpServer();
