@@ -80,8 +80,8 @@ main().catch(console.error);
 const PORT = process.env.PORT || 4000;
 
 function startHttpServer(){
-	const server = http.createServer(async (req, res) => {
- 		if (req.method === 'GET' && req.url === '/queue'){
+	const server = http.createServer(async (request, response) => {
+ 		if (request.method === 'GET' && request.url === '/queue'){
  			const info = {
  				serviceBus: { connected: !!sbClient },
  				receiver: receiver ? 'print-queue' : null,
@@ -100,19 +100,54 @@ function startHttpServer(){
  				info.recentJobsError = 'Cosmos container not initialized';
  			}
 
- 			res.setHeader('Content-Type', 'application/json');
- 			res.end(JSON.stringify(info));
+ 			response.setHeader('Content-Type', 'application/json');
+			response.end(JSON.stringify(info));
+			return;
+		}
+
+		if (request.method === 'GET' && request.url.startsWith('/queues')){
+			try {
+				const u = new URL(request.url, `http://localhost`);
+				let count = 1;
+				if (u.searchParams.has('count')) {
+					count = parseInt(u.searchParams.get('count'), 10) || 1;
+				} else {
+					const parts = u.pathname.split('/').filter(Boolean); // ['queues','13']
+					if (parts.length >= 2) count = parseInt(parts[1], 10) || 1;
+				}
+
+				const prefix = u.searchParams.get('prefix') || 'print-queue';
+				const MAX = 100;
+				if (count < 1) count = 1;
+				if (count > MAX) count = MAX;
+
+				const queues = [];
+				if (count === 1) {
+					queues.push(prefix);
+				} else {
+					for (let i = 1; i <= count; i++){
+						queues.push(`${prefix}-${i}`);
+					}
+				}
+
+				response.setHeader('Content-Type', 'application/json');
+				response.end(JSON.stringify({ count, prefix, queues }));
+				return;
+			} catch (err) {
+				response.writeHead(500, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
+				return;
+			}
+		}
+
+ 		if (request.method === 'GET' && request.url === '/health'){
+ 			response.writeHead(200, { 'Content-Type': 'application/json' });
+ 			response.end(JSON.stringify({ ok: true }));
  			return;
  		}
 
- 		if (req.method === 'GET' && req.url === '/health'){
- 			res.writeHead(200, { 'Content-Type': 'application/json' });
- 			res.end(JSON.stringify({ ok: true }));
- 			return;
- 		}
-
- 		res.writeHead(404, { 'Content-Type': 'text/plain' });
- 		res.end('Not found');
+ 		response.writeHead(404, { 'Content-Type': 'text/plain' });
+ 		response.end('Not found');
  	});
 
 	server.listen(PORT, () => console.log(`HTTP server listening on port ${PORT}`));
