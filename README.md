@@ -28,3 +28,68 @@ COSMOS_KEY=your-cosmos-key
 ```
 
 Upewnij się, że nie ma spacji wokół `=` i że nie opakowujesz wartości w `<...>`.
+
+## HTTP endpoints (użycie)
+
+Serwis udostępnia prosty HTTP API do podglądu stanu kolejek i ostatnich zadań.
+
+1. GET /queue
+     - Zwraca informację o połączeniu z Service Bus, nazwę receivera oraz listę ostatnich 10 dokumentów z Cosmos DB (jeśli dostępne).
+     - Przykład (PowerShell):
+
+         ```powershell
+         Invoke-RestMethod http://localhost:4000/queue
+         ```
+
+     - Przykład (curl):
+
+         ```bash
+         curl http://localhost:4000/queue
+         ```
+
+2. GET /queues or /queues/<n> and /queues?count=<n>&prefix=<name>
+     - Endpoint generuje listę nazw kolejek (przydatne do testów/symulacji). Domyślny prefix to `print-queue`.
+     - Obsługiwane formy:
+         - `GET /queues` — zwraca pojedynczą nazwę domyślną.
+         - `GET /queues/13` — zwraca 13 nazw: `print-queue-1` ... `print-queue-13`.
+         - `GET /queues?count=5&prefix=job` — zwraca `job-1` ... `job-5`.
+     - Uwaga: dla bezpieczeństwa count jest ograniczony do maksymalnie 100.
+     - Przykład (PowerShell):
+
+         ```powershell
+         Invoke-RestMethod http://localhost:4000/queues/13
+         Invoke-RestMethod 'http://localhost:4000/queues?count=5&prefix=job'
+         ```
+
+     - Przykład (curl):
+
+         ```bash
+         curl http://localhost:4000/queues/13
+         curl 'http://localhost:4000/queues?count=5&prefix=job'
+         ```
+
+3. GET /health
+     - Prosty healthcheck zwracający `{ "ok": true }`.
+
+     ```powershell
+     Invoke-RestMethod http://localhost:4000/health
+     ```
+
+Jak działa ten endpoint?
+- `/queues` w obecnej implementacji generuje nazwy kolejek (symulacja). Nie wykonuje zapytań administracyjnych do Service Bus ani nie tworzy receiverów dynamicznie.
+- Jeśli chcesz sprawdzać rzeczywisty stan kolejek (np. liczbę wiadomości lub istnienie kolejki), wymaga to dodania `ServiceBusAdministrationClient` z pakietu `@azure/service-bus` i odpowiednich uprawnień na namespace (management).
+
+Uruchomienie serwisu lokalnie
+1. Ustaw zmienne środowiskowe (PowerShell):
+
+     ```powershell
+     $env:SERVICE_BUS_CONN = 'Endpoint=sb://...;SharedAccessKeyName=...;SharedAccessKey=...'
+     $env:COSMOS_ENDPOINT = 'https://your-cosmos-account.documents.azure.com:443/'
+     $env:COSMOS_KEY = 'your-cosmos-key'
+     node .\index.js
+     ```
+
+2. Jeśli wolisz użyć `setx` by zapisać zmienne na stałe w systemie, pamiętaj że nowe wartości będą widoczne dopiero w nowej sesji PowerShell.
+
+Bezpieczeństwo
+- Nie commituj prawdziwych connection stringów ani kluczy. W CI używaj GitHub Secrets lub innego bezpiecznego mechanizmu przechowywania sekretów.
