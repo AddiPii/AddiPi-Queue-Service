@@ -1,4 +1,4 @@
-const { ServiceBusClient } = require("@azure/service-bus");
+const { ServiceBusClient, ServiceBusAdministrationClient } = require("@azure/service-bus");
 const { CosmosClient } = require("@azure/cosmos");
 const http = require('http');
 
@@ -25,7 +25,16 @@ let sbClient; // Service Bus client
 let receiver;
 let cosmosClient;
 let container;
+let adminClient;
+let queuesCache = { ts: 0, data: null };
+const CACHE_TTL_MS = 30_000; // 30 seconds
 
+
+try{
+	adminClient = new ServiceBusAdministrationClient(SERVICE_BUS_CONN);
+}catch (err){
+	console.warn('Admin client init failed:', err && err.message ? err.message : err);
+}
 try {
 	sbClient = new ServiceBusClient(SERVICE_BUS_CONN);
 	receiver = sbClient.createReceiver('print-queue');
@@ -106,38 +115,53 @@ function startHttpServer(){
 		}
 
 		if (request.method === 'GET' && request.url.startsWith('/queues')){
+			const u = new URL(request.url, `http://localhost`);
+			let count = 1;
+			if (u.searchParams.has('count')) {
+				count = parseInt(u.searchParams.get('count'), 10) || 1;
+			} else {
+				const parts = u.pathname.split('/').filter(Boolean); // ['queues','13']
+				if (parts.length >= 2) count = parseInt(parts[1], 10) || 1;
+			}
+
+			const MAX = 100;
+			if (count < 1) count = 1;
+			if (count > MAX) count = MAX;
+
+			// Require adminClient: we no longer provide simulated queues
+			if (!adminClient) {
+				response.writeHead(503, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ error: 'ServiceBusAdministrationClient not initialized. Ensure SERVICE_BUS_CONN has management permissions.' }));
+				return;
+			}
+
+			// use admin client to list queues and fetch runtime properties
+			const realQueues = [];
 			try {
-				const u = new URL(request.url, `http://localhost`);
-				let count = 1;
-				if (u.searchParams.has('count')) {
-					count = parseInt(u.searchParams.get('count'), 10) || 1;
-				} else {
-					const parts = u.pathname.split('/').filter(Boolean); // ['queues','13']
-					if (parts.length >= 2) count = parseInt(parts[1], 10) || 1;
-				}
-
-				const prefix = u.searchParams.get('prefix') || 'print-queue';
-				const MAX = 100;
-				if (count < 1) count = 1;
-				if (count > MAX) count = MAX;
-
-				const queues = [];
-				if (count === 1) {
-					queues.push(prefix);
-				} else {
-					for (let i = 1; i <= count; i++){
-						queues.push(`${prefix}-${i}`);
+				for await (const q of adminClient.listQueues()) {
+					if (realQueues.length >= count) break;
+					try {
+						const runtime = await adminClient.getQueueRuntimeProperties(q.name);
+						realQueues.push({
+							name: q.name,
+							activeMessageCount: runtime.activeMessageCount || 0,
+							deadLetterMessageCount: runtime.deadLetterMessageCount || 0,
+							createdOn: runtime.createdOn,
+							updatedOn: runtime.updatedOn
+						});
+					} catch (innerErr) {
+						realQueues.push({ name: q.name, error: innerErr && innerErr.message ? innerErr.message : String(innerErr) });
 					}
 				}
-
 				response.setHeader('Content-Type', 'application/json');
-				response.end(JSON.stringify({ count, prefix, queues }));
+				response.end(JSON.stringify({ count: realQueues.length, queues: realQueues }));
 				return;
 			} catch (err) {
 				response.writeHead(500, { 'Content-Type': 'application/json' });
 				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
 				return;
 			}
+		}
 		}
 
  		if (request.method === 'GET' && request.url === '/health'){
