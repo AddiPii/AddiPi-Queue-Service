@@ -47,25 +47,25 @@ Serwis udostępnia prosty HTTP API do podglądu stanu kolejek i ostatnich zadań
          curl http://localhost:4000/queue
          ```
 
-2. GET /queues or /queues/<n> and /queues?count=<n>&prefix=<name>
-     - Endpoint generuje listę nazw kolejek (przydatne do testów/symulacji). Domyślny prefix to `print-queue`.
+2. GET /queues or /queues/<n> and /queues?count=<n>
+     - Uwaga: od tej wersji endpoint **zwraca WYŁĄCZNIE rzeczywiste kolejki** z Azure Service Bus — symulacja nazw została usunięta.
+     - Wymagane: `SERVICE_BUS_CONN` z uprawnieniami **Manage** (np. `RootManageSharedAccessKey`) — bez tego endpoint zwróci `503 Service Unavailable` i informację, że klient administracyjny nie został zainicjalizowany.
+     - Zwracane dane: lista obiektów z polami `name`, `activeMessageCount`, `deadLetterMessageCount`, `createdOn`, `updatedOn`.
      - Obsługiwane formy:
-         - `GET /queues` — zwraca pojedynczą nazwę domyślną.
-         - `GET /queues/13` — zwraca 13 nazw: `print-queue-1` ... `print-queue-13`.
-         - `GET /queues?count=5&prefix=job` — zwraca `job-1` ... `job-5`.
-     - Uwaga: dla bezpieczeństwa count jest ograniczony do maksymalnie 100.
+         - `GET /queues` — zwraca pierwsze `count` kolejek (domyślnie 1).
+         - `GET /queues/13` — zwraca do 13 kolejek (jeśli ich tyle istnieje).
+         - `GET /queues?count=5` — zwraca 5 kolejek.
+     - Uwaga: dla bezpieczeństwa `count` jest ograniczony do maksymalnie 100.
      - Przykład (PowerShell):
 
          ```powershell
-         Invoke-RestMethod http://localhost:4000/queues/13
-         Invoke-RestMethod 'http://localhost:4000/queues?count=5&prefix=job'
+         Invoke-RestMethod 'http://localhost:4000/queues?count=5'
          ```
 
      - Przykład (curl):
 
          ```bash
-         curl http://localhost:4000/queues/13
-         curl 'http://localhost:4000/queues?count=5&prefix=job'
+         curl 'http://localhost:4000/queues?count=5'
          ```
 
 3. GET /health
@@ -76,8 +76,9 @@ Serwis udostępnia prosty HTTP API do podglądu stanu kolejek i ostatnich zadań
      ```
 
 Jak działa ten endpoint?
-- `/queues` w obecnej implementacji generuje nazwy kolejek (symulacja). Nie wykonuje zapytań administracyjnych do Service Bus ani nie tworzy receiverów dynamicznie.
-- Jeśli chcesz sprawdzać rzeczywisty stan kolejek (np. liczbę wiadomości lub istnienie kolejki), wymaga to dodania `ServiceBusAdministrationClient` z pakietu `@azure/service-bus` i odpowiednich uprawnień na namespace (management).
+- `/queues` używa `ServiceBusAdministrationClient` do listowania kolejek i pobierania ich runtime properties. W tej wersji nie ma lokalnej symulacji nazw kolejek.
+- Jeśli serwis nie mógł zainicjalizować klienta administracyjnego (np. brak praw Manage), endpoint odpowie `503 Service Unavailable` z krótką instrukcją. 
+- Wywołania administracyjne mogą być wolniejsze i podlegać throttlingowi — w implementacji znajduje się prosty cache in-memory z TTL (30s).
 
 Uruchomienie serwisu lokalnie
 1. Ustaw zmienne środowiskowe (PowerShell):
