@@ -162,7 +162,7 @@ function startHttpServer(){
 				return;
 			}
 		}
-		}
+		
 
  		if (request.method === 'GET' && request.url === '/health'){
  			response.writeHead(200, { 'Content-Type': 'application/json' });
