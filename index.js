@@ -72,7 +72,7 @@ async function main(){
 		await container.items.upsert(job);
 		console.log(`JOB ${job.status.toUpperCase()}: ${job.id} -> ${job.scheduledAt || 'NOW'}`);
 		
-		//checkPrinterandStartJob()     TODO
+		//checkPrinterandStartJob()     TODO (printerservice?)
 	};
 
 	const errorHandler = (error) => {
