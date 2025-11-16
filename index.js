@@ -181,6 +181,45 @@ function startHttpServer(){
 			}
 		}
 
+		if (request.method === 'POST' && /^\/queue\/[^\/]+\/cancel$/.test(request.url)){
+			if (!container) {
+				response.writeHead(503, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ error: 'Cosmos container not initialized' }));
+				return;
+			}
+			try{
+				const parts = request.url.split('/').filter(Boolean); // ['queue', '<id>', 'cancel']
+				const id = decodeURIComponent(parts[1] || '');
+
+				if(!id){
+					response.writeHead(400, { 'Content-Type': 'application/json' });
+						response.end(JSON.stringify({ error: 'Invalid job id' }));
+						return;
+				}
+				const query = {
+					query: 'SELECT * FROM c WHERE c.id = @id',
+					parameters: [{ name: '@id', value: id}]
+				};
+
+				if(!found.resources || found.resources.length === 0){
+					response.writeHead(404, { 'Content-Type': 'application/json' });
+					response.end(JSON.stringify({ error: 'Job not found' }));
+					return;
+				}
+
+				const job = found.resources[0];
+				job.status = 'cancelled';
+				const up = await container.items.upsert(job);
+				response.setHeader('Content-Type', 'application/json');
+				response.end(JSON.stringify({ ok:true, job:up }));
+				return;
+			} catch(err){
+				response.writeHead(500, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
+				return;
+			}
+		}
+
 		if (request.method === 'GET' && request.url.startsWith('/queues')){
 			let count = 1;
 			if (u.searchParams.has('count')) {
