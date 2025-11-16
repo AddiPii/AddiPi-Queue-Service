@@ -34,18 +34,37 @@ Upewnij się, że nie ma spacji wokół `=` i że nie opakowujesz wartości w `<
 Serwis udostępnia prosty HTTP API do podglądu stanu kolejek i ostatnich zadań.
 
 1. GET /queue
-     - Zwraca informację o połączeniu z Service Bus, nazwę receivera oraz listę ostatnich 10 dokumentów z Cosmos DB (jeśli dostępne).
-     - Przykład (PowerShell):
+     - Zwraca listę jobów z Cosmos DB oraz informacje o stanie połączenia do Service Bus.
+     - Obsługiwane query params:
+         - `limit` — maksymalna liczba elementów w odpowiedzi (domyślnie 50, min 1, max 1000).
+         - `continuationToken` — token do pobrania kolejnej strony wyników (z poprzedniej odpowiedzi).
+         - `sort` — `scheduledAt` lub `createdAt` (domyślnie `createdAt`).
+         - `order` — `asc` lub `desc` (domyślnie `desc`).
+     - Zwracany format (JSON):
+       - `serviceBus`: { connected: boolean }
+       - `receiver`: nazwa receivera lub null
+       - `jobs`: tablica dokumentów jobów
+       - `count`: liczba zwróconych jobów
+       - `continuationToken`: token (string) lub null — użyj go w kolejnym wywołaniu aby pobrać dalsze strony
+     - Przykłady:
+         - Pobierz pierwszą stronę (domyślnie 50):
 
-         ```powershell
-         Invoke-RestMethod http://localhost:4000/queue
-         ```
+             ```powershell
+             Invoke-RestMethod 'http://localhost:4000/queue'
+             ```
 
-     - Przykład (curl):
+         - Pobierz 20 elementów posortowanych po `scheduledAt` rosnąco:
 
-         ```bash
-         curl http://localhost:4000/queue
-         ```
+             ```powershell
+             Invoke-RestMethod 'http://localhost:4000/queue?limit=20&sort=scheduledAt&order=asc'
+             ```
+
+         - Pobierz następną stronę (użyj tokena zwróconego w `continuationToken`):
+
+             ```powershell
+             $token = '<token-from-previous-response>'
+             Invoke-RestMethod "http://localhost:4000/queue?limit=20&continuationToken=$token"
+             ```
 
 2. GET /queues or /queues/<n> and /queues?count=<n>
      - Uwaga: od tej wersji endpoint **zwraca WYŁĄCZNIE rzeczywiste kolejki** z Azure Service Bus — symulacja nazw została usunięta.
@@ -94,3 +113,34 @@ Uruchomienie serwisu lokalnie
 
 Bezpieczeństwo
 - Nie commituj prawdziwych connection stringów ani kluczy. W CI używaj GitHub Secrets lub innego bezpiecznego mechanizmu przechowywania sekretów.
+
+## Dodatkowe endpointy i zarządzanie jobami
+
+1. GET /queue/next
+     - Zwraca pojedynczy najbliższy job do wykonania: status `'pending'` lub `'scheduled'` gdzie `scheduledAt` <= teraz. Sortowane po `createdAt` rosnąco.
+     - Odpowiedzi:
+         - 200 + `{ job: { ... } }` gdy jest job
+         - 204 gdy brak jobów do wykonania
+         - 503 gdy Cosmos container nie jest zainicjalizowany
+         - 500 przy błędzie wewnętrznym
+     - Przykład:
+
+         ```powershell
+         Invoke-RestMethod http://localhost:4000/queue/next
+         ```
+
+2. POST /queue/{id}/cancel
+     - Anuluje job o danym `id` — aktualizuje dokument w Cosmos DB (`status` -> `'cancelled'`).
+     - Odpowiedzi:
+         - 200 + `{ ok: true, job: <updatedDoc> }` przy powodzeniu
+         - 400 przy niepoprawnym id
+         - 404 gdy job nie istnieje
+         - 503 gdy Cosmos container nie jest zainicjalizowany
+         - 500 przy błędzie wewnętrznym
+     - Przykład (PowerShell):
+
+         ```powershell
+         Invoke-RestMethod -Method Post http://localhost:4000/queue/<JOB_ID>/cancel
+         ```
+
+Uwaga: aktualizacja joba odbywa się przez `container.items.upsert(job)` w obecnej implementacji. Jeśli chcesz użyć `replace` z określeniem partition key, podaj wartość partition key i mogę to zmienić.
