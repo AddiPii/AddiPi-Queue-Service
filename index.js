@@ -90,6 +90,7 @@ const PORT = process.env.PORT || 4000;
 
 function startHttpServer(){
 	const server = http.createServer(async (request, response) => {
+		const u = new URL(request.url, 'http://localhost:4000');
  		if (request.method === 'GET' && request.url === '/queue'){
 			const info = {
 				serviceBus: { connected: !!sbClient },
@@ -99,7 +100,6 @@ function startHttpServer(){
 
 			if(container){
 				try{
-					const u = new URL(request.url, 'http://localhost:4000');
 					const limit = Math.min(Math.max(parseInt(u.searchParams.get('limit') || '50', 10) || 50, 1), 1000);
 					const continuationToken = u.searchParams.get('continuationToken') || null;
 					const sortField = (u.searchParams.get('sort') === 'scheludedAt') ? 'c.scheludedAt' : 'c.createdAt';
@@ -151,8 +151,37 @@ function startHttpServer(){
 			response.end(JSON.stringify(info));
 			return;
 		}
+
+		if (request.method === 'GET' && request.url === '/queue/next'){
+			if (!container) {
+				response.writeHead(503, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ error: 'Cosmos container not initialized' }));
+				return;
+			}
+			try{
+				const now = new Date().toISOString();
+				const query = {
+					query: `SELECT TOP 1 * FROM  c WHERE c.status='pending' OR (c.status='scheluded' AND c.scheludedAt <=@now) ORDER BY ASC`,
+					parameters: [{ name: '@now', value: now }]
+				};
+				const result = await container.items.query(query).fetchAll();
+				const job = (result.resources && result.resources.length) ? result.resources[0] : null;
+				if(!job){
+					response.writeHead(204, { 'Content-Type': 'application/json' });
+					response.end();
+					return;
+				}
+				response.setHeader('Content-Type', 'application/json');
+				response.end(JSON.stringify({ job }));
+				return;
+			} catch(err){
+				response.writeHead(500, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
+				return;
+			}
+		}
+
 		if (request.method === 'GET' && request.url.startsWith('/queues')){
-			const u = new URL(request.url, `http://localhost`);
 			let count = 1;
 			if (u.searchParams.has('count')) {
 				count = parseInt(u.searchParams.get('count'), 10) || 1;
