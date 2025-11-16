@@ -91,29 +91,66 @@ const PORT = process.env.PORT || 4000;
 function startHttpServer(){
 	const server = http.createServer(async (request, response) => {
  		if (request.method === 'GET' && request.url === '/queue'){
- 			const info = {
- 				serviceBus: { connected: !!sbClient },
- 				receiver: receiver ? 'print-queue' : null,
- 				recentJobs: []
- 			};
+			const info = {
+				serviceBus: { connected: !!sbClient },
+				receiver: receiver ? 'print-queue': null,
+				recentJobs: []
+			};
 
- 			if (container){
- 				try {
- 					const query = { query: 'SELECT TOP 10 * FROM c ORDER BY c.createdAt DESC' };
- 					const result = await container.items.query(query).fetchAll();
- 					info.recentJobs = result.resources || [];
- 				} catch (err) {
- 					info.recentJobsError = err && err.message ? err.message : String(err);
- 				}
- 			} else {
- 				info.recentJobsError = 'Cosmos container not initialized';
- 			}
+			if(container){
+				try{
+					const u = new URL(request.url, 'http://localhost:4000');
+					const limit = Math.min(Math.max(parseInt(u.searchParams.get('limit') || '50', 10) || 50, 1), 1000);
+					const continuationToken = u.searchParams.get('continuationToken') || null;
+					const sortField = (u.searchParams.get('sort') === 'scheludedAt') ? 'c.scheludedAt' : 'c.createdAt';
+					const order = (u.searchParams.get('order') === 'asc') ? 'ASC' : 'DESC';
 
- 			response.setHeader('Content-Type', 'application/json');
+					const info = {
+						serviceBus: { connected: !!sbClient },
+						receiver: receiver ? 'print-queue' : null,
+						jobs: [],
+						continuationToken: null,
+					};
+					
+					if(!container){
+						response.writeHead(503, {'Content-type': 'application/json'});
+						response.end(JSON.stringify({error: 'Cosmos container not initialized'}));
+						return;
+					}
+
+					try{
+						const sql = `SELECT * FROM c ORDER BY ${sortField} ${order}`;
+						const iterator = container.items.query({ query: sql }, { maxItemCount: limit, continuationToken: continuationToken });
+						const page = await iterator.fetchNext();
+						const resources = (page && page.resources) ? page.resources : [];
+
+						let cont = null;
+						if(page && page.headers) {
+							cont = page.headers['x-ms-continuation'] || page.headers['x-ms-continuationtoken'] || page.headers['x-ms-continuation-token'] || page.headers['continuationtoken'] || page.headers['continuation-token'] || null;
+						}
+						info.jobs = resources;
+						info.count = resources.length;
+						info.continuationToken = cont || null;
+						response.setHeader({ 'Content-type': 'application/json' });
+						response.end(JSON.stringify(info));
+						return;
+					} catch(err){
+						response.writeHead(500, { 'Content-Type': 'application/json' });
+						response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
+						return;
+					}
+				} catch(err){
+					info.recentJobsError = err && err.message ? err.message: String(err);
+				}
+			}
+			else{
+				info.recentJobsError = 'Cosmos container not initialized';
+			}
+
+			response.setHeader({ 'Content-type': 'application/json' });
 			response.end(JSON.stringify(info));
 			return;
 		}
-
 		if (request.method === 'GET' && request.url.startsWith('/queues')){
 			const u = new URL(request.url, `http://localhost`);
 			let count = 1;
