@@ -1,5 +1,5 @@
 # AddiPi-Queue-Service
-
+AddiPi Printer Service to lekki mikroserwis odpowiedzialny za zarządzanie i wykonywanie zadań drukowania. Obsługuje kolejkowanie zadań i przechowywanie ich w Azure CosmosDB. Udostępnia też prosty serwer HTTP z endpointami health i podstawowego zarządzania.
 
 
 ## Wymagania
