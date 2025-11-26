@@ -1,3 +1,4 @@
+//AddiPi Queue Service
 const { ServiceBusClient, ServiceBusAdministrationClient } = require("@azure/service-bus");
 const { CosmosClient } = require("@azure/cosmos");
 const express = require('express');
