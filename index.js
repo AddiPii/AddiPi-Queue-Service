@@ -120,7 +120,7 @@ app.get('/queue', async (req, res) => {
 			}
 
 			try {
-				const sql = `SELECT id, fileId, scheludedAt, createdAt FROM c ORDER BY ${sortField} ${order}`;
+				const sql = `SELECT c.fileId, c.originalFileName, c.status, c.scheduledAt, c.createdAt FROM c ORDER BY ${sortField} ${order}`;
 				const iterator = container.items.query({ query: sql }, { maxItemCount: limit, continuationToken: continuationToken });
 				const page = await iterator.fetchNext();
 				const resources = (page && page.resources) ? page.resources : [];
@@ -132,7 +132,7 @@ app.get('/queue', async (req, res) => {
 				resultInfo.jobs = resources;
 				resultInfo.count = resources.length;
 				resultInfo.continuationToken = cont || null;
-				return res.json(resultInfo);
+				return res.json(resultInfo.jobs);
 			} catch (err) {
 				return res.status(500).json({ error: err && err.message ? err.message : String(err) });
 			}
