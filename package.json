@@ -9,9 +9,10 @@
   },
   "dependencies": {
     "@azure/cosmos": "^4.7.0",
-    "@azure/service-bus": "^7.9.5"
+    "@azure/service-bus": "^7.9.5",
+    "express": "^5.1.0"
   },
-  "repository": { 
+  "repository": {
     "type": "git",
     "url": "git+https://github.com/AddiPii/AddiPi-Queue-Service.git"
   },

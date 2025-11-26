@@ -1,7 +1,8 @@
 const { ServiceBusClient, ServiceBusAdministrationClient } = require("@azure/service-bus");
 const { CosmosClient } = require("@azure/cosmos");
-const http = require('http');
+const express = require('express');
 
+const app = express();
 
 const SERVICE_BUS_CONN = process.env.SERVICE_BUS_CONN;
 const COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT;
@@ -26,8 +27,8 @@ let receiver;
 let cosmosClient;
 let container;
 let adminClient;
-let queuesCache = { ts: 0, data: null };
-const CACHE_TTL_MS = 30_000; // 30 seconds
+// let queuesCache = { ts: 0, data: null };
+// const CACHE_TTL_MS = 30_000; // 30 seconds
 
 
 try{
@@ -59,10 +60,13 @@ async function main(){
 		const data = message.body;
 		console.log('Received EVENT:', data);
 
+		let job
+
 		if (data.event === 'file_uploaded'){
-			const job = {
+			job = {
 				id: Date.now().toString(),
 				fileId: data.fileId,
+				originalFileName: data.originalFileName,
 				status: data.scheduledAt ? 'scheduled' : 'pending',
 				scheduledAt: data.scheduledAt || null,
 				createdAt: new Date().toISOString(),
@@ -88,198 +92,138 @@ main().catch(console.error);
 
 const PORT = process.env.PORT || 4000;
 
-function startHttpServer(){
-	const server = http.createServer(async (request, response) => {
-		const u = new URL(request.url, 'http://localhost:4000');
- 		if (request.method === 'GET' && request.url === '/queue'){
-			const info = {
+// Express routes (replaces the old http.createServer)
+app.get('/queue', async (req, res) => {
+	const info = {
+		serviceBus: { connected: !!sbClient },
+		receiver: receiver ? 'print-queue' : null,
+		recentJobs: []
+	};
+
+	if (container) {
+		try {
+			const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10) || 50, 1), 1000);
+			const continuationToken = req.query.continuationToken || null;
+			const sortField = (req.query.sort === 'scheludedAt') ? 'c.scheludedAt' : 'c.createdAt';
+			const order = (req.query.order === 'asc') ? 'ASC' : 'DESC';
+
+			const resultInfo = {
 				serviceBus: { connected: !!sbClient },
-				receiver: receiver ? 'print-queue': null,
-				recentJobs: []
+				receiver: receiver ? 'print-queue' : null,
+				jobs: [],
+				continuationToken: null,
 			};
 
-			if(container){
-				try{
-					const limit = Math.min(Math.max(parseInt(u.searchParams.get('limit') || '50', 10) || 50, 1), 1000);
-					const continuationToken = u.searchParams.get('continuationToken') || null;
-					const sortField = (u.searchParams.get('sort') === 'scheludedAt') ? 'c.scheludedAt' : 'c.createdAt';
-					const order = (u.searchParams.get('order') === 'asc') ? 'ASC' : 'DESC';
-
-					const info = {
-						serviceBus: { connected: !!sbClient },
-						receiver: receiver ? 'print-queue' : null,
-						jobs: [],
-						continuationToken: null,
-					};
-					
-					if(!container){
-						response.writeHead(503, {'Content-type': 'application/json'});
-						response.end(JSON.stringify({error: 'Cosmos container not initialized'}));
-						return;
-					}
-
-					try{
-						const sql = `SELECT * FROM c ORDER BY ${sortField} ${order}`;
-						const iterator = container.items.query({ query: sql }, { maxItemCount: limit, continuationToken: continuationToken });
-						const page = await iterator.fetchNext();
-						const resources = (page && page.resources) ? page.resources : [];
-
-						let cont = null;
-						if(page && page.headers) {
-							cont = page.headers['x-ms-continuation'] || page.headers['x-ms-continuationtoken'] || page.headers['x-ms-continuation-token'] || page.headers['continuationtoken'] || page.headers['continuation-token'] || null;
-						}
-						info.jobs = resources;
-						info.count = resources.length;
-						info.continuationToken = cont || null;
-						response.setHeader({ 'Content-type': 'application/json' });
-						response.end(JSON.stringify(info));
-						return;
-					} catch(err){
-						response.writeHead(500, { 'Content-Type': 'application/json' });
-						response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
-						return;
-					}
-				} catch(err){
-					info.recentJobsError = err && err.message ? err.message: String(err);
-				}
-			}
-			else{
-				info.recentJobsError = 'Cosmos container not initialized';
-			}
-
-			response.setHeader({ 'Content-type': 'application/json' });
-			response.end(JSON.stringify(info));
-			return;
-		}
-
-		if (request.method === 'GET' && request.url === '/queue/next'){
 			if (!container) {
-				response.writeHead(503, { 'Content-Type': 'application/json' });
-				response.end(JSON.stringify({ error: 'Cosmos container not initialized' }));
-				return;
-			}
-			try{
-				const now = new Date().toISOString();
-				const query = {
-					query: `SELECT TOP 1 * FROM  c WHERE c.status='pending' OR (c.status='scheluded' AND c.scheludedAt <=@now) ORDER BY ASC`,
-					parameters: [{ name: '@now', value: now }]
-				};
-				const result = await container.items.query(query).fetchAll();
-				const job = (result.resources && result.resources.length) ? result.resources[0] : null;
-				if(!job){
-					response.writeHead(204, { 'Content-Type': 'application/json' });
-					response.end();
-					return;
-				}
-				response.setHeader('Content-Type', 'application/json');
-				response.end(JSON.stringify({ job }));
-				return;
-			} catch(err){
-				response.writeHead(500, { 'Content-Type': 'application/json' });
-				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
-				return;
-			}
-		}
-
-		if (request.method === 'POST' && /^\/queue\/[^\/]+\/cancel$/.test(request.url)){
-			if (!container) {
-				response.writeHead(503, { 'Content-Type': 'application/json' });
-				response.end(JSON.stringify({ error: 'Cosmos container not initialized' }));
-				return;
-			}
-			try{
-				const parts = request.url.split('/').filter(Boolean); // ['queue', '<id>', 'cancel']
-				const id = decodeURIComponent(parts[1] || '');
-
-				if(!id){
-					response.writeHead(400, { 'Content-Type': 'application/json' });
-						response.end(JSON.stringify({ error: 'Invalid job id' }));
-						return;
-				}
-				const query = {
-					query: 'SELECT * FROM c WHERE c.id = @id',
-					parameters: [{ name: '@id', value: id}]
-				};
-
-				if(!found.resources || found.resources.length === 0){
-					response.writeHead(404, { 'Content-Type': 'application/json' });
-					response.end(JSON.stringify({ error: 'Job not found' }));
-					return;
-				}
-
-				const job = found.resources[0];
-				job.status = 'cancelled';
-				const up = await container.items.upsert(job);
-				response.setHeader('Content-Type', 'application/json');
-				response.end(JSON.stringify({ ok:true, job:up }));
-				return;
-			} catch(err){
-				response.writeHead(500, { 'Content-Type': 'application/json' });
-				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
-				return;
-			}
-		}
-
-		if (request.method === 'GET' && request.url.startsWith('/queues')){
-			let count = 1;
-			if (u.searchParams.has('count')) {
-				count = parseInt(u.searchParams.get('count'), 10) || 1;
-			} else {
-				const parts = u.pathname.split('/').filter(Boolean); // ['queues','13']
-				if (parts.length >= 2) count = parseInt(parts[1], 10) || 1;
+				return res.status(503).json({ error: 'Cosmos container not initialized' });
 			}
 
-			const MAX = 100;
-			if (count < 1) count = 1;
-			if (count > MAX) count = MAX;
-
-			// Require adminClient: we no longer provide simulated queues
-			if (!adminClient) {
-				response.writeHead(503, { 'Content-Type': 'application/json' });
-				response.end(JSON.stringify({ error: 'ServiceBusAdministrationClient not initialized. Ensure SERVICE_BUS_CONN has management permissions.' }));
-				return;
-			}
-
-			// use admin client to list queues and fetch runtime properties
-			const realQueues = [];
 			try {
-				for await (const q of adminClient.listQueues()) {
-					if (realQueues.length >= count) break;
-					try {
-						const runtime = await adminClient.getQueueRuntimeProperties(q.name);
-						realQueues.push({
-							name: q.name,
-							activeMessageCount: runtime.activeMessageCount || 0,
-							deadLetterMessageCount: runtime.deadLetterMessageCount || 0,
-							createdOn: runtime.createdOn,
-							updatedOn: runtime.updatedOn
-						});
-					} catch (innerErr) {
-						realQueues.push({ name: q.name, error: innerErr && innerErr.message ? innerErr.message : String(innerErr) });
-					}
+				const sql = `SELECT id, fileId, scheludedAt, createdAt FROM c ORDER BY ${sortField} ${order}`;
+				const iterator = container.items.query({ query: sql }, { maxItemCount: limit, continuationToken: continuationToken });
+				const page = await iterator.fetchNext();
+				const resources = (page && page.resources) ? page.resources : [];
+
+				let cont = null;
+				if (page && page.headers) {
+					cont = page.headers['x-ms-continuation'] || page.headers['x-ms-continuationtoken'] || page.headers['x-ms-continuation-token'] || page.headers['continuationtoken'] || page.headers['continuation-token'] || null;
 				}
-				response.setHeader('Content-Type', 'application/json');
-				response.end(JSON.stringify({ count: realQueues.length, queues: realQueues }));
-				return;
+				resultInfo.jobs = resources;
+				resultInfo.count = resources.length;
+				resultInfo.continuationToken = cont || null;
+				return res.json(resultInfo);
 			} catch (err) {
-				response.writeHead(500, { 'Content-Type': 'application/json' });
-				response.end(JSON.stringify({ error: err && err.message ? err.message : String(err) }));
-				return;
+				return res.status(500).json({ error: err && err.message ? err.message : String(err) });
+			}
+		} catch (err) {
+			info.recentJobsError = err && err.message ? err.message : String(err);
+		}
+	} else {
+		info.recentJobsError = 'Cosmos container not initialized';
+	}
+
+	return res.json(info);
+});
+
+app.get('/queue/next', async (req, res) => {
+	if (!container) return res.status(503).json({ error: 'Cosmos container not initialized' });
+	try {
+		const now = new Date().toISOString();
+		const query = {
+			query: `SELECT TOP 1 * FROM  c WHERE c.status='pending' OR (c.status='scheluded' AND c.scheludedAt <=@now) ORDER BY ASC`,
+			parameters: [{ name: '@now', value: now }]
+		};
+		const result = await container.items.query(query).fetchAll();
+		const job = (result.resources && result.resources.length) ? result.resources[0] : null;
+		if (!job) return res.status(204).end();
+		return res.json({ job });
+	} catch (err) {
+		return res.status(500).json({ error: err && err.message ? err.message : String(err) });
+	}
+});
+
+app.post('/queue/:id/cancel', async (req, res) => {
+	if (!container) return res.status(503).json({ error: 'Cosmos container not initialized' });
+	try {
+		const id = decodeURIComponent(req.params.id || '');
+		if (!id) return res.status(400).json({ error: 'Invalid job id' });
+
+		const query = {
+			query: 'SELECT * FROM c WHERE c.id = @id',
+			parameters: [{ name: '@id', value: id }]
+		};
+
+		const found = await container.items.query(query).fetchAll();
+		if (!found.resources || found.resources.length === 0) return res.status(404).json({ error: 'Job not found' });
+
+		const job = found.resources[0];
+		job.status = 'cancelled';
+		const up = await container.items.upsert(job);
+		return res.json({ ok: true, job: up });
+	} catch (err) {
+		return res.status(500).json({ error: err && err.message ? err.message : String(err) });
+	}
+});
+
+app.get(['/queues', '/queues/:count'], async (req, res) => {
+	let count = 1;
+	if (req.query.count) count = parseInt(req.query.count, 10) || 1;
+	else if (req.params.count) count = parseInt(req.params.count, 10) || 1;
+
+	const MAX = 100;
+	if (count < 1) count = 1;
+	if (count > MAX) count = MAX;
+
+	if (!adminClient) return res.status(503).json({ error: 'ServiceBusAdministrationClient not initialized. Ensure SERVICE_BUS_CONN has management permissions.' });
+
+	const realQueues = [];
+	try {
+		for await (const q of adminClient.listQueues()) {
+			if (realQueues.length >= count) break;
+			try {
+				const runtime = await adminClient.getQueueRuntimeProperties(q.name);
+				realQueues.push({
+					name: q.name,
+					activeMessageCount: runtime.activeMessageCount || 0,
+					deadLetterMessageCount: runtime.deadLetterMessageCount || 0,
+					createdOn: runtime.createdOn,
+					updatedOn: runtime.updatedOn
+				});
+			} catch (innerErr) {
+				realQueues.push({ name: q.name, error: innerErr && innerErr.message ? innerErr.message : String(innerErr) });
 			}
 		}
-		
+		return res.json({ count: realQueues.length, queues: realQueues });
+	} catch (err) {
+		return res.status(500).json({ error: err && err.message ? err.message : String(err) });
+	}
+});
 
- 		if (request.method === 'GET' && request.url === '/health'){
- 			response.writeHead(200, { 'Content-Type': 'application/json' });
- 			response.end(JSON.stringify({ ok: true }));
- 			return;
- 		}
+app.get('/health', (req, res) => res.json({ ok: true }));
 
- 		response.writeHead(404, { 'Content-Type': 'text/plain' });
- 		response.end('Not found');
- 	});
+app.use((req, res) => res.status(404).type('text').send('Not found'));
 
-	server.listen(PORT, () => console.log(`HTTP server listening on port ${PORT}`));
-}
 
-startHttpServer();
+app.listen(PORT, ()=>{
+	console.log(`HTTP server listening on port ${PORT}`)
+})
