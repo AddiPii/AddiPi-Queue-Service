@@ -12,20 +12,11 @@ app.use(express.json());
 
 app.use(cors());
 
-export const missing = [];
-
-if (missing.length) {
-	console.error('Missing required environment variables:', missing.join(', '));
-	console.error('Please set these before starting the service. Example (PowerShell):');
-	console.error('$env:SERVICE_BUS_CONN = "Endpoint=sb://...;SharedAccessKeyName=...;SharedAccessKey=..."');
-	console.error('$env:COSMOS_ENDPOINT = "https://<account>.documents.azure.com:443/"');
-	console.error('$env:COSMOS_KEY = "<primary-key>"');
-	process.exit(1);
-}
 
 const { sbClient, receiver } = initServiceBus(CONFIG.SERVICE_BUS_CONN)
 let container = initCosmosContainer(CONFIG.COSMOS_ENDPOINT, CONFIG.COSMOS_KEY)
 let adminClient = initAdminClient(CONFIG.SERVICE_BUS_CONN);
+
 
 console.log('Queue Service STARTED - listening for file uploading...');
 
