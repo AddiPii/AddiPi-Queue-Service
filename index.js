@@ -2,9 +2,10 @@
 import express from 'express';
 import cors from 'cors';
 import { CONFIG } from './config.js';
-import initServiceBus from './azure/initServiceBus.js';
-import initAdminClient from './azure/initAdminClient.js';
-import initCosmosContainer from './azure/initCosmosContainer.js';
+import { adminClient, container, receiver, sbClient } from './services/clients.js';
+import { startPrintQueueListener } from './listeners/printQueueListener.js';
+import getLocalISO from './helpers/getLocalISO.js';
+
 
 const app = express();
 
@@ -12,46 +13,14 @@ app.use(express.json());
 
 app.use(cors());
 
-
-const { sbClient, receiver } = initServiceBus(CONFIG.SERVICE_BUS_CONN)
-let container = initCosmosContainer(CONFIG.COSMOS_ENDPOINT, CONFIG.COSMOS_KEY)
-let adminClient = initAdminClient(CONFIG.SERVICE_BUS_CONN);
-
-
 console.log('Queue Service STARTED - listening for file uploading...');
 
 
 async function main(){
-	const messageHandler = async (message) => {
-		const data = message.body;
-		console.log('Received EVENT:', data);
+	const stopListener = startPrintQueueListener(container, receiver)
 
-		let job
-
-		if (data.event === 'file_uploaded'){
-			job = {
-				id: Date.now().toString(),
-				fileId: data.fileId,
-				originalFileName: data.originalFileName,
-				status: data.scheduledAt ? 'scheduled' : 'pending',
-				scheduledAt: data.scheduledAt || null,
-				createdAt: new Date().toISOString(),
-			}
-		}
-
-		await container.items.upsert(job);
-		console.log(`JOB ${job.status.toUpperCase()}: ${job.id} -> ${job.scheduledAt || 'NOW'}`);
-		
-		//checkPrinterandStartJob()     TODO (printerservice?)
-	};
-
-	const errorHandler = (error) => {
-		console.error('EVENT ERROR:', error);
-	};
-	receiver.subscribe({
-		processMessage: messageHandler,
-		processError: errorHandler
-	});
+	process.on('SIGINT', async () => { await stopListener(); process.exit(0); });
+	process.on('SIGTERM', async () => { await stopListener(); process.exit(0); });
 }
 
 main().catch(console.error);
@@ -115,7 +84,7 @@ app.get('/queue', async (req, res) => {
 app.get('/queue/next', async (req, res) => {
 	if (!container) return res.status(503).json({ error: 'Cosmos container not initialized' });
 	try {
-		const now = new Date().toISOString();
+		const now = getLocalISO.substring(0, 19);
 		const query = {
 			query: `SELECT TOP 1 * FROM  c WHERE c.status='pending' OR (c.status='scheluded' AND c.scheludedAt <=@now) ORDER BY ASC`,
 			parameters: [{ name: '@now', value: now }]
