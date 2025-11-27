@@ -10,6 +10,7 @@
   "dependencies": {
     "@azure/cosmos": "^4.7.0",
     "@azure/service-bus": "^7.9.5",
+    "cors": "^2.8.5",
     "express": "^5.1.0"
   },
   "repository": {

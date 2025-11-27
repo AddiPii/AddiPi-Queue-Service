@@ -2,8 +2,13 @@
 const { ServiceBusClient, ServiceBusAdministrationClient } = require("@azure/service-bus");
 const { CosmosClient } = require("@azure/cosmos");
 const express = require('express');
+const cors = require('cors')
 
 const app = express();
+
+app.use(express.json())
+
+app.use(cors)
 
 const SERVICE_BUS_CONN = process.env.SERVICE_BUS_CONN;
 const COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT;
