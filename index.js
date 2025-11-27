@@ -1,23 +1,18 @@
-//AddiPi Queue Service
-const { ServiceBusClient, ServiceBusAdministrationClient } = require("@azure/service-bus");
-const { CosmosClient } = require("@azure/cosmos");
-const express = require('express');
-const cors = require('cors')
+// AddiPi Queue Service
+import express from 'express';
+import cors from 'cors';
+import { CONFIG } from './config.js';
+import initServiceBus from './azure/initServiceBus.js';
+import initAdminClient from './azure/initAdminClient.js';
+import initCosmosContainer from './azure/initCosmosContainer.js';
 
 const app = express();
 
-app.use(express.json())
+app.use(express.json());
 
-app.use(cors)
+app.use(cors());
 
-const SERVICE_BUS_CONN = process.env.SERVICE_BUS_CONN;
-const COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT;
-const COSMOS_KEY = process.env.COSMOS_KEY;
-
-const missing = [];
-if (!SERVICE_BUS_CONN) missing.push('SERVICE_BUS_CONN');
-if (!COSMOS_ENDPOINT) missing.push('COSMOS_ENDPOINT');
-if (!COSMOS_KEY) missing.push('COSMOS_KEY');
+export const missing = [];
 
 if (missing.length) {
 	console.error('Missing required environment variables:', missing.join(', '));
@@ -28,35 +23,9 @@ if (missing.length) {
 	process.exit(1);
 }
 
-let sbClient; // Service Bus client
-let receiver;
-let cosmosClient;
-let container;
-let adminClient;
-// let queuesCache = { ts: 0, data: null };
-// const CACHE_TTL_MS = 30_000; // 30 seconds
-
-
-try{
-	adminClient = new ServiceBusAdministrationClient(SERVICE_BUS_CONN);
-}catch (err){
-	console.warn('Admin client init failed:', err && err.message ? err.message : err);
-}
-try {
-	sbClient = new ServiceBusClient(SERVICE_BUS_CONN);
-	receiver = sbClient.createReceiver('print-queue');
-} catch (err) {
-	console.error('Failed to create Service Bus client:', err && err.message ? err.message : err);
-	process.exit(1);
-}
-
-try {
-	cosmosClient = new CosmosClient({ endpoint: COSMOS_ENDPOINT, key: COSMOS_KEY });
-	container = cosmosClient.database('addipi').container('jobs');
-} catch (err) {
-	console.error('Failed to create Cosmos DB client:', err && err.message ? err.message : err);
-	process.exit(1);
-}
+const { sbClient, receiver } = initServiceBus(CONFIG.SERVICE_BUS_CONN)
+let container = initCosmosContainer(CONFIG.COSMOS_ENDPOINT, CONFIG.COSMOS_KEY)
+let adminClient = initAdminClient(CONFIG.SERVICE_BUS_CONN);
 
 console.log('Queue Service STARTED - listening for file uploading...');
 
