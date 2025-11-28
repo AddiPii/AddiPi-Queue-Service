@@ -4,7 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-COPY index.js .
 
-EXPOSE 4071
+COPY . .
+
+EXPOSE 3070
+
 CMD ["npm", "start"]
