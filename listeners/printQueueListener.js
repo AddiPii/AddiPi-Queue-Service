@@ -23,6 +23,8 @@ export function startPrintQueueListener(container, receiver){
 				id: Date.now().toString(),
 				fileId: data.fileId,
 				originalFileName: data.originalFileName || null,
+				userId: data.userId,
+				userEmail: data.userEmail,
 				status: data.scheduledAt ? 'scheduled' : 'pending',
 				scheduledAt: data.scheduledAt || null,
 				createdAt: getLocalISO(),
