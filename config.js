@@ -18,5 +18,6 @@ export const CONFIG = {
   SERVICE_BUS_CONN: getRequired('SERVICE_BUS_CONN'),
   COSMOS_ENDPOINT: getRequired('COSMOS_ENDPOINT'),
   COSMOS_KEY: getRequired('COSMOS_KEY'),
+  AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
   PORT: Number(process.env.QUEUE_PORT || 3070),
 };
