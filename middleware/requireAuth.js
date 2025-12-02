@@ -13,7 +13,7 @@ const requireAuth = async (req, res, next) =>{
         const response = await fetch(`${CONFIG.AUTH_SERVICE_URL}/auth/verify`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer${token}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             }
         })
