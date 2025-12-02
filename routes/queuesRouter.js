@@ -5,4 +5,4 @@ import requireAuth from '../middleware/requireAuth.js'
 
 export const queuesRouter = express.Router()
 
-queuesRouter.get(['/', '/:count'], getQueuesByCount)
+queuesRouter.get(['/', '/:count'], requireAuth, getQueuesByCount)

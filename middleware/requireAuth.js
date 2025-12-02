@@ -5,6 +5,7 @@ const requireAuth = async (req, res, next) =>{
         const token = req.headers.authorization?.replace('Bearer ', '')
 
         if (!token){
+            console.log('no token')
             res.status(401).json({error: 'Missing authentication token'})
             return
         }
@@ -17,14 +18,18 @@ const requireAuth = async (req, res, next) =>{
             }
         })
 
+        const data = await response.json()
+
         if (!response.ok){
+            console.log('response not ok')
             throw new Error('Authentication failed')
         }
 
-        req.user = response.data.user
+        req.user = data.user
 
         next()
     } catch (err) {
+        console.log('Full try fail', err)
         res.status(401).json({ error: 'Invalid authentication token' });
     }
 }
