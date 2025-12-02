@@ -50,9 +50,7 @@ export function startPrintQueueListener(container, receiver){
 	receiver.subscribe({ 
         processMessage: messageHandler, 
         processError: errorHandler 
-    }, 
-        { autoCompleteMessages: false }
-    );
+    });
 
 	return async function stop(){
 		try{ await receiver.close(); }catch(e){ console.warn('Error closing receiver:', e); }
