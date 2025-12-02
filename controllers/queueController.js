@@ -87,7 +87,7 @@ export const cancelJobById = async (req, res) => {
 		const job = found.resources[0];
 		job.status = 'cancelled';
 		const up = await container.items.upsert(job);
-		// `up` is a Cosmos DB response object (contains circular refs). Return only the resource (the saved document).
+		
 		const saved = up && up.resource ? up.resource : job;
 		return res.json({ ok: true, job: saved });
 	} catch (err) {
