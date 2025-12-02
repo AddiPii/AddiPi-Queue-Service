@@ -1,10 +1,10 @@
-const requireUser = (req, res,) => {
+const requireUser = (req, res, next) => {
     if (!req.user){
         res.status(403).json({error: 'Authentication required'})
         return
     }
 
-    getNextJob()
+    next()
 }
 
 export default requireUser
