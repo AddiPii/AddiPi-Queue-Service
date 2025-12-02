@@ -5,3 +5,5 @@ const requireAdmin = async (req, res, next) => {
     }
     next()
 }
+
+export default requireAdmin
