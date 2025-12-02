@@ -27,7 +27,7 @@ export const getQueue = async (req, res) => {
 			}
 
 			try {
-				const sql = `SELECT c.fileId, c.originalFileName, c.status, c.scheduledAt, c.createdAt FROM c ORDER BY ${sortField} ${order}`;
+				const sql = `SELECT c.id, c.fileId, c.originalFileName, c.status, c.scheduledAt, c.createdAt FROM c ORDER BY ${sortField} ${order}`;
 				const iterator = container.items.query({ query: sql }, { maxItemCount: limit, continuationToken: continuationToken });
 				const page = await iterator.fetchNext();
 				const resources = (page && page.resources) ? page.resources : [];
@@ -87,8 +87,11 @@ export const cancelJobById = async (req, res) => {
 		const job = found.resources[0];
 		job.status = 'cancelled';
 		const up = await container.items.upsert(job);
-		return res.json({ ok: true, job: up });
+		// `up` is a Cosmos DB response object (contains circular refs). Return only the resource (the saved document).
+		const saved = up && up.resource ? up.resource : job;
+		return res.json({ ok: true, job: saved });
 	} catch (err) {
+		console.log(err)
 		return res.status(500).json({ error: err && err.message ? err.message : String(err) });
 	}
 }
