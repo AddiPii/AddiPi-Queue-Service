@@ -5,8 +5,8 @@ on:
             - main
 
 permissions:
-    packages: read
-    contents: write
+    packages: write
+    contents: read
 
 jobs:
     publish:
