@@ -12,7 +12,7 @@ export const getQueue = async (req, res) => {
 		try {
 			const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10) || 50, 1), 1000);
 			const continuationToken = req.query.continuationToken || null;
-			const sortField = (req.query.sort === 'scheludedAt') ? 'c.scheludedAt' : 'c.createdAt';
+			const sortField = (req.query.sort === 'scheduledAt') ? 'c.scheduledAt' : 'c.createdAt';
 			const order = (req.query.order === 'asc') ? 'ASC' : 'DESC';
 
 			const resultInfo = {
@@ -56,9 +56,9 @@ export const getQueue = async (req, res) => {
 export const getNextJob = async (req, res) => {
 	if (!container) return res.status(503).json({ error: 'Cosmos container not initialized' });
 	try {
-		const now = getLocalISO.substring(0, 19);
+		const now = getLocalISO().substring(0, 19);
 		const query = {
-			query: `SELECT TOP 1 * FROM  c WHERE c.status='pending' OR (c.status='scheluded' AND c.scheludedAt <=@now) ORDER BY ASC`,
+			query: `SELECT TOP 1 * FROM c WHERE c.status='pending' OR (c.status='scheduled' AND c.scheduledAt <= @now) ORDER BY c.scheduledAt ASC`,
 			parameters: [{ name: '@now', value: now }]
 		};
 		const result = await container.items.query(query).fetchAll();
