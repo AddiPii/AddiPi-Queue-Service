@@ -1,5 +1,12 @@
 import { sbClient, receiver, adminClient, container } from "../services/clients.js";
 
+const canManageJob = (job, user) => {
+	if (!job || !user) return false;
+
+	const requesterId = user.userId || user.id;
+	return user.role === 'admin' || (Boolean(requesterId) && job.userId === requesterId);
+}
+
 
 export const getQueue = async (req, res) => {
 	const info = {
@@ -85,6 +92,9 @@ export const cancelJobById = async (req, res) => {
 		if (!found.resources || found.resources.length === 0) return res.status(404).json({ error: 'Job not found' });
 
 		const job = found.resources[0];
+		if (!canManageJob(job, req.user)) {
+			return res.status(403).json({ error: 'Only job owner or admin can cancel this job' });
+		}
 		job.status = 'cancelled';
 		const up = await container.items.upsert(job);
 		
