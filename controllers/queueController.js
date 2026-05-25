@@ -56,7 +56,7 @@ export const getQueue = async (req, res) => {
 export const getNextJob = async (req, res) => {
 	if (!container) return res.status(503).json({ error: 'Cosmos container not initialized' });
 	try {
-		const now = getLocalISO().substring(0, 19);
+		const now = new Date().toISOString();
 		const query = {
 			query: `SELECT TOP 1 * FROM c WHERE c.status='pending' OR (c.status='scheduled' AND c.scheduledAt <= @now) ORDER BY c.scheduledAt ASC`,
 			parameters: [{ name: '@now', value: now }]
